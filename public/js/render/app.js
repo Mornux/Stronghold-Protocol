@@ -1383,11 +1383,18 @@ export async function createFieldView(host, options = {}) {
 
   const onPointerDown = (e) => {
     if (destroyed) return;
-    if (e.pointerType === 'mouse' && e.button === 1) {
+    if (e.pointerType === 'mouse' && e.button === 0) {
+      const p = canvasPoint(e);
+      //When left clicking on a unit, the original operation is retained, and the blank area is used to drag the map 
+      const unit = mode === 'battle' ? battleUnitAt(p.x, p.y) : pieceAt(p.x, p.y);
+      if (unit || (mode === 'prep' && leaderAt(p.x, p.y)) || (penViews.size && penUnitAt(p.x, p.y))) {
+        if (!pan) handlePointerDown(e);
+        return;
+      }
       e.preventDefault();
       if (camTo || drag.dragging || pan) return;
       drag.pointerCancel();
-      pan = { pointerId: e.pointerId, ...canvasPoint(e) };
+      pan = { pointerId: e.pointerId, ...p };
       try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       return;
     }
@@ -1437,7 +1444,6 @@ export async function createFieldView(host, options = {}) {
   const onPointerLeave = (e) => { if (!destroyed && !drag.dragging) drag.pointerLeave(evPayload(e)); if (hoverUnit) { hoverUnit = null; emit('pieceHover', { uid: null, unitId: null }); } };
   const onContext = (e) => e.preventDefault();
 
-  const onAuxClick = (e) => { if (e.button === 1) e.preventDefault(); };
   // A finger is handled through the pointer events above only. The compatibility mouse events + click of a tap come
   // after touchend, hit-tested at the finger again — where the tap may just have opened DOM UI: a tap on a unit's tile
   // selects it and its underframe opens over the tile (clamped under the top bar on a phone), and the click pressed
@@ -1450,7 +1456,6 @@ export async function createFieldView(host, options = {}) {
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('pointerleave', onPointerLeave);
   canvas.addEventListener('contextmenu', onContext);
-  canvas.addEventListener('auxclick', onAuxClick);
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
 
   // ---- battle ---------------------------------------------------------------------------------------------
@@ -2030,7 +2035,6 @@ export async function createFieldView(host, options = {}) {
       canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('contextmenu', onContext);
-      canvas.removeEventListener('auxclick', onAuxClick);
       canvas.removeEventListener('touchend', onTouchEnd);
       app.ticker.remove(frame);
       app.ticker.remove(preRender);
