@@ -1334,7 +1334,30 @@ export async function createFieldView(host, options = {}) {
     return hit ? hit.ref : null;
   }
 
-  const onPointerDown = (e) => {
+  /** Zoom the shared camera **/
+  let zoomCamera = null, zoomBase = 0;
+  let pan = null;
+
+  function zoomAt(factor, x, y) {
+    if (zoomCamera !== cam) { zoomCamera = cam; zoomBase = cam.scale; }
+    const scale = Math.max(zoomBase * 0.5, Math.min(zoomBase * 3, cam.scale * factor));
+    const ratio = scale / cam.scale;
+    cam.cx = x + (cam.cx - x) * ratio;
+    cam.cy = y + (cam.cy - y) * ratio;
+    cam.scale = scale;
+    cam.update();
+  }
+
+  const onWheel = (e) => {
+    if (destroyed) return;
+    e.preventDefault();
+    if (camTo || drag.dragging || pan) return;
+    const p = canvasPoint(e);
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
+    zoomAt(Math.exp(-Math.max(-200, Math.min(200, e.deltaY * unit)) * 0.002), p.x, p.y);
+  };
+
+  const handlePointerDown = (e) => {
     if (destroyed) return;
     const ev = evPayload(e);
     if (mode === 'battle') {
@@ -1357,8 +1380,35 @@ export async function createFieldView(host, options = {}) {
       if (pv) emitPenClick(pv, e);
     }
   };
+
+  const onPointerDown = (e) => {
+    if (destroyed) return;
+    if (e.pointerType === 'mouse' && e.button === 1) {
+      e.preventDefault();
+      if (camTo || drag.dragging || pan) return;
+      drag.pointerCancel();
+      pan = { pointerId: e.pointerId, ...canvasPoint(e) };
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      return;
+    }
+    if (pan) return;
+    handlePointerDown(e);
+  };
+
   const onPointerMove = (e) => {
     if (destroyed) return;
+    if (pan) {
+      if (e.pointerId === pan.pointerId) {
+        const p = canvasPoint(e);
+        if (!camTo) {
+          cam.cx += p.x - pan.x;
+          cam.cy += p.y - pan.y;
+          cam.update();
+        }
+        pan = { pointerId: e.pointerId, ...p };
+      }
+      return;
+    }
     const ev = evPayload(e);
     if (mode === 'battle') {
       if (e.pointerType === 'touch') return;
@@ -1372,21 +1422,35 @@ export async function createFieldView(host, options = {}) {
     }
     drag.pointerMove(ev);
   };
-  const onPointerUp = (e) => { if (!destroyed && mode !== 'battle') drag.pointerUp(evPayload(e)); try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ } };
-  const onPointerCancel = (e) => { if (!destroyed) drag.pointerCancel(evPayload(e)); };
+
+  function endPan(e) {
+    if (pan?.pointerId === e.pointerId) pan = null;
+    try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+
+  const onPointerUp = (e) => {
+    if (!destroyed && !pan && mode !== 'battle') drag.pointerUp(evPayload(e));
+    endPan(e);
+  };
+
+  const onPointerCancel = (e) => { if (!destroyed) drag.pointerCancel(evPayload(e)); endPan(e); };
   const onPointerLeave = (e) => { if (!destroyed && !drag.dragging) drag.pointerLeave(evPayload(e)); if (hoverUnit) { hoverUnit = null; emit('pieceHover', { uid: null, unitId: null }); } };
   const onContext = (e) => e.preventDefault();
+
+  const onAuxClick = (e) => { if (e.button === 1) e.preventDefault(); };
   // A finger is handled through the pointer events above only. The compatibility mouse events + click of a tap come
   // after touchend, hit-tested at the finger again — where the tap may just have opened DOM UI: a tap on a unit's tile
   // selects it and its underframe opens over the tile (clamped under the top bar on a phone), and the click pressed
   // 撤退 / 出售 (user playtest #4 item 1 on a phone). Cancelling touchend drops them.
   const onTouchEnd = (e) => { if (e.cancelable) e.preventDefault(); };
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('pointerleave', onPointerLeave);
   canvas.addEventListener('contextmenu', onContext);
+  canvas.addEventListener('auxclick', onAuxClick);
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
 
   // ---- battle ---------------------------------------------------------------------------------------------
@@ -1960,11 +2024,13 @@ export async function createFieldView(host, options = {}) {
       try { offAssets?.(); } catch { /* ignore */ }
       globalThis.document?.removeEventListener?.('visibilitychange', onVisible);
       canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('contextmenu', onContext);
+      canvas.removeEventListener('auxclick', onAuxClick);
       canvas.removeEventListener('touchend', onTouchEnd);
       app.ticker.remove(frame);
       app.ticker.remove(preRender);
