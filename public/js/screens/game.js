@@ -81,7 +81,7 @@ import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
-import { SettingsModal } from '../ui/settings.js';
+import { SettingsModal, useSettings } from '../ui/settings.js';
 import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { openGuide } from '../ui/guide.js';
 import { actions } from '../ui/gameActions.js';
@@ -225,6 +225,7 @@ function MatchScreen() {
   const [armedCard, setArmedCard] = useState(null);     // the shop bar's armed card { kind, id } (merge tile cue)
   const cc = isClientCombat(pub);
   const battleState = useStore((s) => s.match.battle, shallowEqual); // local battle runner (client-side combat)
+
 
   const phase = pub?.phase;
   const mode = phaseMode(phase);
@@ -1273,6 +1274,15 @@ function MatchScreen() {
   // bonds this mode never activates (标准: 10 of 23, 奥术 among them) — shown 本局禁用 on cards, chips and the popup
   const offBonds = modeOffBonds(getMode(pub?.modeId));
 
+  const cameraSettings = useSettings();                 // saved preference controlling camera buttons and manual movement
+  const [cameraLocked, setCameraLocked] = useState(false); // independent camera lock for this game; not saved in settings
+  // A newly mounted field view starts with the camera unlocked.
+  useEffect(() => {
+    setCameraLocked(false);
+  }, [view]);
+  // Apply the independent lock to the renderer whenever the view or lock state changes.
+  useEffect(() => { view?.setCameraLocked(cameraLocked); }, [view, cameraLocked]);
+
   return html`<div class=${cx('screen', 'gm', `gm--${mode}`, drag && 'is-dragging', collapsed && 'is-collapsed', sp && 'has-sp', pen && 'is-pen', readyWhy && 'has-readywhy')}
       data-camera=${pen ? 'pen' : camKind}>
     <div class="gm__field" ref=${hostRef} onContextMenu=${(e) => e.preventDefault()}></div>
@@ -1344,6 +1354,13 @@ function MatchScreen() {
         <button type="button" class="gm__gear" aria-label="设置" title="设置" onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label="玩法说明" title="玩法说明" onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />
+        ${cameraSettings.cameraControls ? html`<div class="gm__camera-actions">
+          <button type="button" class="gm__gear gm__camera-btn" aria-label=${cameraLocked ? '相机解锁' : '相机锁定'}
+            title=${cameraLocked ? '相机解锁' : '相机锁定'} aria-pressed=${cameraLocked ? 'true' : 'false'}
+            onClick=${() => setCameraLocked(!cameraLocked)}><${Icon} name=${cameraLocked ? 'lock' : 'unlock'} /></button>
+          <button type="button" class="gm__gear gm__camera-btn" aria-label="相机复位" title="相机复位"
+            onClick=${() => view?.resetCamera()}><${Icon} name="locate" /></button>
+        </div>` : null}
       </div>
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}
@@ -1383,4 +1400,3 @@ function MatchScreen() {
     <${ExitModal} open=${exitOpen} onClose=${() => setExitOpen(false)} solo=${solo} />
   </div>`;
 }
-
