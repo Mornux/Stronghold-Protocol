@@ -409,7 +409,7 @@ export async function createFieldView(host, options = {}) {
   const P = await ensurePixi();
   const assets = resolveAssets(opts.assets);
   const data = makeData(opts.data);
-  const settings = { damageNumbers: true, cameraControls: true, quality: 'high', ...(opts.settings || {}) };
+  const settings = { damageNumbers: true, cameraControls: false, quality: 'high', ...(opts.settings || {}) };
   // the 3D board (three.js + the official art) loads in parallel with everything else
   const boardPref = boardPreference(opts.board);
   const want3d = boardPref !== '2d' && webgl2Available(boardPref === '3d');
