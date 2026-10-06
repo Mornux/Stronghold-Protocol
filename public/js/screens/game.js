@@ -81,7 +81,7 @@ import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
-import { SettingsModal } from '../ui/settings.js';
+import { SettingsModal, useSettings } from '../ui/settings.js';
 import { ExitModal, AwayOverlay, awayStore } from '../ui/matchChrome.js';
 import { openGuide } from '../ui/guide.js';
 import { actions } from '../ui/gameActions.js';
@@ -195,6 +195,12 @@ function MatchScreen() {
   const barRef = useRef(null);
   const hudElRef = useRef(null);                         // .gm__hud (inside the safe-area insets: the panels' frame)
   const { view, kind: viewKind } = useFieldView(hostRef);
+  const cameraSettings = useSettings();
+  const [cameraLocked, setCameraLocked] = useState(false);
+  useEffect(() => {
+    setCameraLocked(false);
+  }, [view]);
+  useEffect(() => { view?.setCameraLocked(cameraLocked); }, [view, cameraLocked]);
 
   const [watching, setWatching] = useState(null);        // fieldId the player chose to watch (null = home)
   const [watchWho, setWatchWho] = useState(null);        // { fieldId, playerId }: the teammate picked with 前往查看
@@ -1270,6 +1276,13 @@ function MatchScreen() {
         <button type="button" class="gm__gear" aria-label="设置" title="设置" onClick=${() => setSettingsOpen(true)}><${GIcon} name="gear" /></button>
         <button type="button" class="gm__gear gm__guide" aria-label="玩法说明" title="玩法说明" onClick=${() => openGuide(0)}><${Icon} name="book" /></button>
         <${FullscreenButton} class="gm__gear gm__fs" />
+        ${cameraSettings.cameraControls ? html`<div class="gm__camera-actions">
+          <button type="button" class="gm__gear gm__camera-btn" aria-label=${cameraLocked ? '相机解锁' : '相机锁定'}
+            title=${cameraLocked ? '相机解锁' : '相机锁定'} aria-pressed=${cameraLocked ? 'true' : 'false'}
+            onClick=${() => setCameraLocked(!cameraLocked)}><${Icon} name=${cameraLocked ? 'lock' : 'unlock'} /></button>
+          <button type="button" class="gm__gear gm__camera-btn" aria-label="相机复位" title="相机复位"
+            onClick=${() => view?.resetCamera()}><${Icon} name="locate" /></button>
+        </div>` : null}
       </div>
 
       ${drawer ? html`<${EnemyDrawer} tab=${drawer} onTab=${setDrawer} pub=${pub} priv=${priv} onClose=${() => setDrawer(null)}
@@ -1308,4 +1321,3 @@ function MatchScreen() {
     <${ExitModal} open=${exitOpen} onClose=${() => setExitOpen(false)} solo=${solo} />
   </div>`;
 }
-

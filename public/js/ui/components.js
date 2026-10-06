@@ -76,6 +76,10 @@ export const ICONS = {
   book: { d: 'M2 4h7.5A3.5 3.5 0 0 1 12 5.1 3.5 3.5 0 0 1 14.5 4H22v16h-7.5a1.5 1.5 0 0 0-1.5 1.5h-2A1.5 1.5 0 0 0 9.5 20H2zm2 2v12h5.5c.5 0 1 .1 1.5.3V7.5A1.5 1.5 0 0 0 9.5 6zm10.5 0A1.5 1.5 0 0 0 13 7.5v10.8c.5-.2 1-.3 1.5-.3H20V6z', eo: true },
   // 观战 (spectator seats; the same eye as gameComponents.js GIcon 'eye')
   eye: { d: 'M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z', eo: true },
+  // 相机控制 (camera lock / unlock and reset; padlocks and a location crosshair for game.js corner buttons)
+  lock: { d: 'M7 10V7a5 5 0 0 1 10 0v3h3v12H4V10zm2 0h6V7a3 3 0 0 0-6 0zm-3 2v8h12v-8zm5 3h2v3h-2z', eo: true },
+  unlock: { d: 'M7 10V7a5 5 0 0 1 10 0h-2a3 3 0 0 0-6 0v3h11v12H4V10zm-1 2v8h12v-8zm5 3h2v3h-2z', eo: true },
+  locate: { d: 'M11 1h2v3.06A8 8 0 0 1 19.94 11H23v2h-3.06A8 8 0 0 1 13 19.94V23h-2v-3.06A8 8 0 0 1 4.06 13H1v-2h3.06A8 8 0 0 1 11 4.06zm1 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6z', eo: true },
 };
 
 /**

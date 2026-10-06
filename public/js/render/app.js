@@ -403,7 +403,7 @@ export async function createFieldView(host, options = {}) {
   const P = await ensurePixi();
   const assets = resolveAssets(opts.assets);
   const data = makeData(opts.data);
-  const settings = { damageNumbers: true, quality: 'high', ...(opts.settings || {}) };
+  const settings = { damageNumbers: true, cameraControls: true, quality: 'high', ...(opts.settings || {}) };
   // the 3D board (three.js + the official art) loads in parallel with everything else
   const boardPref = boardPreference(opts.board);
   const want3d = boardPref !== '2d' && webgl2Available(boardPref === '3d');
@@ -1337,6 +1337,7 @@ export async function createFieldView(host, options = {}) {
   /** Zoom the shared camera **/
   let zoomCamera = null, zoomBase = 0;
   let pan = null;
+  let cameraLocked = false; //Independent lock for the current game; not persisted in settings.
 
   function zoomAt(factor, x, y) {
     if (zoomCamera !== cam) { zoomCamera = cam; zoomBase = cam.scale; }
@@ -1351,7 +1352,7 @@ export async function createFieldView(host, options = {}) {
   const onWheel = (e) => {
     if (destroyed) return;
     e.preventDefault();
-    if (camTo || drag.dragging || pan) return;
+    if (!settings.cameraControls || cameraLocked || camTo || drag.dragging || pan) return;
     const p = canvasPoint(e);
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
     zoomAt(Math.exp(-Math.max(-200, Math.min(200, e.deltaY * unit)) * 0.002), p.x, p.y);
@@ -1383,7 +1384,7 @@ export async function createFieldView(host, options = {}) {
 
   const onPointerDown = (e) => {
     if (destroyed) return;
-    if (e.pointerType === 'mouse' && e.button === 0) {
+    if (settings.cameraControls && !cameraLocked && e.pointerType === 'mouse' && e.button === 0) {
       const p = canvasPoint(e);
       //When left clicking on a unit, the original operation is retained, and the blank area is used to drag the map 
       const unit = mode === 'battle' ? battleUnitAt(p.x, p.y) : pieceAt(p.x, p.y);
@@ -2007,11 +2008,22 @@ export async function createFieldView(host, options = {}) {
     setSettings(s) {
       if (!s || typeof s !== 'object') return;
       const q = settings.quality;
+      if (typeof s.cameraControls === 'boolean') {
+        settings.cameraControls = s.cameraControls;
+        if (!settings.cameraControls && pan) endPan({ pointerId: pan.pointerId });
+      }
       if (typeof s.damageNumbers === 'boolean') settings.damageNumbers = s.damageNumbers;
       if (s.quality === 'high' || s.quality === 'medium' || s.quality === 'low') settings.quality = s.quality;
       if (q !== settings.quality) { board3d?.setQuality?.(settings.quality); resize(); }
     },
     resize,
+    /** Lock manual camera controls without changing saved settings or blocking automatic phase transitions. */
+    setCameraLocked(locked) {
+      cameraLocked = !!locked;
+      if (cameraLocked && pan) endPan({ pointerId: pan.pointerId });
+    },
+    /** Restore the current scene's default view without changing control settings or the independent camera lock. */
+    resetCamera() { return setCamera(camKind, { ...camOpts, instant: true }); },
     /** Dev / settings: switch the board layer ('3d' loads three.js + the art when available; '2d' = atlas board). */
     async setBoardMode(m) {
       if (destroyed) return false;

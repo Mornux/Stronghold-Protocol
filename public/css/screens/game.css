@@ -349,6 +349,9 @@
 }
 .gm__gear .icon { width: .28rem; height: .28rem; }
 .gm__gear:hover { color: var(--mint-400); border-color: var(--mint-700); }
+.gm__camera-actions { display: flex; gap: .1rem; animation: camera-actions-in .2s ease-out; }
+.gm__gear.gm__camera-btn[aria-pressed="true"] { color: var(--mint-400); border-color: var(--mint-700); }
+@keyframes camera-actions-in { from { opacity: 0; transform: translateX(-.2rem); } to { opacity: 1; transform: translateX(0); } }
 
 .ewheel { position: relative; }
 .ewheel__btn {

@@ -10,7 +10,7 @@ import { audio } from '../audio.js';
 import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
 
-/** Settings store: { bgm, sfx, muted, damageNumbers, quality }. */
+/** Settings store: { bgm, sfx, muted, damageNumbers, cameraControls, quality }. */
 export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
 
 settingsStore.subscribe((s) => {
@@ -64,6 +64,7 @@ export function SettingsModal({ open, onClose }) {
         onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
       <${Toggle} label="静音" micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
       <${Toggle} label="显示伤害数字" micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
+      <${Toggle} label="地图视角控制" micro="CAMERA CONTROLS" value=${s.cameraControls} onChange=${(v) => updateSettings({ cameraControls: v })} />
       <div class="set-row">
         <span class="set-row__label">画面质量<${MicroLabel}>QUALITY<//></span>
         <div class="set-seg" role="radiogroup">
