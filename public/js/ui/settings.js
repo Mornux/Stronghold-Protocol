@@ -10,18 +10,30 @@ import { audio } from '../audio.js';
 import { openGuide } from './guide.js';
 import { detectFeatures } from './device.js';
 
-/** Settings store: { bgm, sfx, voice, muted, damageNumbers, quality }. */
-export const settingsStore = createStore(sanitizeSettings(loadPref('settings', null)));
+/** Settings store: { bgm, sfx, voice, muted, damageNumbers, cameraControls, quality }. */
+const savedSettings = loadPref('settings', null);
+// Store camera controls separately to preserve the original settings schema; migrate older saved values.
+const savedCameraControls = loadPref('cameraControls', null);
+const cameraControls = typeof savedCameraControls === 'boolean' ? savedCameraControls
+  : typeof savedSettings?.cameraControls === 'boolean' ? savedSettings.cameraControls
+    : typeof savedSettings?.mapLocked === 'boolean' ? !savedSettings.mapLocked : false;
+export const settingsStore = createStore({ ...sanitizeSettings(savedSettings), cameraControls });
+savePref('cameraControls', cameraControls);
 
 settingsStore.subscribe((s) => {
   savePref('settings', sanitizeSettings(s));
+  savePref('cameraControls', s.cameraControls);
   audio.setVolumes(s);
 });
 audio.setVolumes(settingsStore.get());
 
-/** @param {Partial<ReturnType<typeof sanitizeSettings>>} patch */
+/** @param {Partial<ReturnType<typeof sanitizeSettings>> & { cameraControls?: boolean }} patch */
 export function updateSettings(patch) {
-  settingsStore.set(sanitizeSettings({ ...settingsStore.get(), ...patch }));
+  const current = settingsStore.get();
+  settingsStore.set({
+    ...sanitizeSettings({ ...current, ...patch }),
+    cameraControls: typeof patch.cameraControls === 'boolean' ? patch.cameraControls : current.cameraControls,
+  });
 }
 
 /** Preact hook: current settings. */
@@ -65,6 +77,7 @@ export function SettingsModal({ open, onClose }) {
         onInput=${(v) => { updateSettings({ sfx: v }); if (!tested) { setTested(true); setTimeout(() => setTested(false), 400); audio.sfx('click'); } }} />
       <${Toggle} label="静音" micro="MUTE" value=${s.muted} onChange=${(v) => updateSettings({ muted: v })} />
       <${Toggle} label="显示伤害数字" micro="DAMAGE NUMBERS" value=${s.damageNumbers} onChange=${(v) => updateSettings({ damageNumbers: v })} />
+      <${Toggle} label="地图视角控制" micro="CAMERA CONTROL" value=${s.cameraControls} onChange=${(v) => updateSettings({ cameraControls: v })} />
       <div class="set-row">
         <span class="set-row__label">画面质量<${MicroLabel}>QUALITY<//></span>
         <div class="set-seg" role="radiogroup">
