@@ -1055,9 +1055,9 @@
   "选择「{name}」的朝向": "Choose {name}'s facing",
   "选择朝向": "Choose a facing",
   "朝向：{dir}": "Facing: {dir}",
-  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers",
   "视角控制": "Camera Control",
   "相机锁定": "Lock Camera",
   "相机解锁": "Unlock Camera",
-  "相机复位": "Reset Camera"
+  "相机复位": "Reset Camera",
+  "开发版 · 不稳定，请勿用于公开服务器": "Development build · unstable, not for public servers"
 }
