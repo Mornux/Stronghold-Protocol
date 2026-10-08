@@ -115,6 +115,7 @@
 import { GEO, ANIM } from '../../../shared/constants.js';
 import { fxForm } from '../../../shared/protocol.js';
 import { Camera, presetCamera, lerpCamera, easeInOutCubic, pickTile, normRect } from './projection.js';
+import { createCameraControls } from './app/camera.js';
 import { SnapshotBuffer, frameTime } from './interp.js';
 import { TileField } from './tiles.js';
 import { UnitView, ItemView, DeviceView, FORMS } from './units.js';
@@ -245,6 +246,7 @@ export async function createFieldView(host, options = {}) {
   let stageRec = null;
   let cam = presetCamera('prep', { width: s0.width, height: s0.height, padding: defaultPadding('prep', s0) }, { hud: hudBands('prep', s0) });
   let camFrom = null, camTo = null, camT0 = 0, camKind = 'prep', camOpts = {}, camMs = CAMERA_MS;
+  let mapCameraControls = null; // Manual controls are initialized alongside the pointer handlers.
   let pendingView = null;     // tile band/focus to apply when the camera transition ends
   const views = new Map();    // key → view (prep: 'p:'+uid; battle: unit id)
   let prepPieces = [];        // { uid, piece, area, idx, row, col, key }
@@ -486,6 +488,7 @@ export async function createFieldView(host, options = {}) {
 
   function setCamera(kind, options) {
     if (destroyed) return false;
+    mapCameraControls?.clearManual();
     let o = options && typeof options === 'object' ? options : {};
     const prevView = viewKind(camKind, camOpts);
     const prevBand = bandFor(prevView), prevField = fieldRows(prevView);
@@ -1151,31 +1154,16 @@ export async function createFieldView(host, options = {}) {
     emit('tileClick', { row: t.row, col: t.col, button: e.button, clientX: e.clientX, clientY: e.clientY });
   }
 
-  /** Zoom the shared camera **/
-  let zoomCamera = null, zoomBase = 0;
-  let pan = null;
-  let cameraLocked = false; //Independent lock for the current game; not persisted in settings.
-
-  /** Zoom around a canvas position while keeping the scale within 0.5 to 3 times its baseline. **/
-  function zoomAt(factor, x, y) {
-    if (zoomCamera !== cam) { zoomCamera = cam; zoomBase = cam.scale; }
-    const scale = Math.max(zoomBase * 0.5, Math.min(zoomBase * 3, cam.scale * factor));
-    const ratio = scale / cam.scale;
-    cam.cx = x + (cam.cx - x) * ratio;
-    cam.cy = y + (cam.cy - y) * ratio;
-    cam.scale = scale;
-    cam.update();
-  }
-
-  /** Add mouse-wheel zoom around the pointer when manual camera controls are enabled and unlocked. **/
-  const onWheel = (e) => {
-    if (destroyed) return;
-    e.preventDefault();
-    if (!settings.cameraControls || cameraLocked || camTo || drag.dragging || pan) return;
-    const p = canvasPoint(e);
-    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
-    zoomAt(Math.exp(-Math.max(-200, Math.min(200, e.deltaY * unit)) * 0.002), p.x, p.y);
-  };
+  /** Connect manual camera controls to the current field state, unit picking, terrain clicks and preset reset. **/
+  mapCameraControls = createCameraControls({
+    canvas, settings, getCamera: () => cam, destroyed: () => destroyed,
+    animating: () => !!camTo, dragging: () => drag.dragging, canvasPoint,
+    hasUnit: (p) => (mode === 'battle' ? battleUnitAt(p.x, p.y) : pieceAt(p.x, p.y)) || (mode === 'prep' && leaderAt(p.x, p.y)) || (penViews.size && penUnitAt(p.x, p.y)),
+    cancelDrag: () => drag.pointerCancel(), tileClick: (e) => emitTileClick(evPayload(e), e),
+    resetCamera: () => setCamera(camKind, { ...camOpts, instant: true }),
+  });
+  // Use the controller's wheel handler for the canvas listener and its removal on destroy.
+  const webOnWheel = mapCameraControls.webOnWheel;
 
   /** Preserve the original unit, drag and terrain-click handling behind the new map-pan entry point. **/
   const handlePointerDown = (e) => {
@@ -1203,45 +1191,12 @@ export async function createFieldView(host, options = {}) {
     }
     emitTileClick(ev, e);
   };
-  /** Start left-button map panning on empty areas while preserving unit interactions. **/
   const onPointerDown = (e) => {
-    if (destroyed) return;
-    if (settings.cameraControls && !cameraLocked && e.pointerType === 'mouse' && e.button === 0) {
-      const p = canvasPoint(e);
-      // Preserve unit interactions; drag empty areas to pan the map.
-      const unit = mode === 'battle' ? battleUnitAt(p.x, p.y) : pieceAt(p.x, p.y);
-      if (unit || (mode === 'prep' && leaderAt(p.x, p.y)) || (penViews.size && penUnitAt(p.x, p.y))) {
-        if (!pan) handlePointerDown(e);
-        return;
-      }
-      e.preventDefault();
-      if (camTo || drag.dragging || pan) return;
-      drag.pointerCancel();
-      pan = { pointerId: e.pointerId, ...p, startX: p.x, startY: p.y, moved: false };
-      try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-      return;
-    }
-    if (pan) return;
-    handlePointerDown(e);
+    if (!mapCameraControls.pointerDown(e)) handlePointerDown(e);
   };
 
-  /** Move the camera after the drag threshold; otherwise keep the original hover and unit-drag behavior. **/
   const onPointerMove = (e) => {
-    if (destroyed) return;
-    if (pan) {
-      if (e.pointerId === pan.pointerId) {
-        const p = canvasPoint(e);
-        if (!pan.moved && Math.hypot(p.x - pan.startX, p.y - pan.startY) <= 4) return;
-        pan.moved = true;
-        if (!camTo) {
-          cam.cx += p.x - pan.x;
-          cam.cy += p.y - pan.y;
-          cam.update();
-        }
-        pan = { ...pan, ...p };
-      }
-      return;
-    }
+    if (destroyed || mapCameraControls.pointerMove(e)) return;
     const ev = evPayload(e);
     if (mode === 'battle') {
       if (e.pointerType === 'touch') return;
@@ -1255,22 +1210,11 @@ export async function createFieldView(host, options = {}) {
     }
     drag.pointerMove(ev);
   };
-  /** Clear map-pan state and release pointer capture when the operation ends. **/
-  function endPan(e) {
-    if (pan?.pointerId === e.pointerId) pan = null;
-    try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  }
-
-  /** Finish map panning, preserve terrain clicks without dragging, and complete ordinary unit drops. **/
   const onPointerUp = (e) => {
-    // A click on empty terrain keeps the upstream tile details; a drag only pans the map.
-    if (!destroyed && pan?.pointerId === e.pointerId && !pan.moved) emitTileClick(evPayload(e), e);
-    if (!destroyed && !pan && mode !== 'battle') drag.pointerUp(evPayload(e));
-    endPan(e);
+    if (!destroyed && !mapCameraControls.panning && mode !== 'battle') drag.pointerUp(evPayload(e));
+    mapCameraControls.pointerUp(e);
   };
-
-  /** Cancel unit dragging and clear map-pan state when the pointer operation is interrupted. **/
-  const onPointerCancel = (e) => { if (!destroyed) drag.pointerCancel(evPayload(e)); endPan(e); };
+  const onPointerCancel = (e) => { if (!destroyed) drag.pointerCancel(evPayload(e)); mapCameraControls.endPan(e); };
   const onPointerLeave = (e) => { if (!destroyed && !drag.dragging) drag.pointerLeave(evPayload(e)); if (hoverUnit) { hoverUnit = null; emit('pieceHover', { uid: null, unitId: null }); } };
   const onContext = (e) => e.preventDefault();
   // A finger is handled through the pointer events above only. The compatibility mouse events + click of a tap come
@@ -1285,7 +1229,7 @@ export async function createFieldView(host, options = {}) {
   // unit. As a click target that holds the finger's point the canvas wins: a tap on the board stays on the tile under it.
   const onTapTarget = () => {};
   canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('wheel', webOnWheel, { passive: false });
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
@@ -1667,6 +1611,7 @@ export async function createFieldView(host, options = {}) {
     if ((globalThis.devicePixelRatio || 1) !== lastDpr) { lastDpr = globalThis.devicePixelRatio || 1; resize(); }
     try {
       stepCamera(now);
+      mapCameraControls.webUpdateZoom(dt);
       if (board3d) {
         if (board3d.lost) onBoard3dLost();
         else board3d.render(cam, clock);
@@ -1728,7 +1673,7 @@ export async function createFieldView(host, options = {}) {
     board3d?.resize(sz.width, sz.height, boardDpr());
     layoutBackdrop();
     const target = targetCamera(camKind, camOpts);
-    if (camTo) camTo = target; else cam = target;
+    if (camTo) camTo = target; else cam = mapCameraControls.resize(target);
     tiles.project(cam, true);
   }
   let ro = null;
@@ -1862,23 +1807,14 @@ export async function createFieldView(host, options = {}) {
     setSettings(s) {
       if (!s || typeof s !== 'object') return;
       const q = settings.quality;
-      if (typeof s.cameraControls === 'boolean') {
-        settings.cameraControls = s.cameraControls;
-        if (!settings.cameraControls && pan) endPan({ pointerId: pan.pointerId });
-      }
-
+      if (typeof s.cameraControls === 'boolean') mapCameraControls.setEnabled(s.cameraControls);
       if (typeof s.damageNumbers === 'boolean') settings.damageNumbers = s.damageNumbers;
       if (s.quality === 'high' || s.quality === 'medium' || s.quality === 'low') settings.quality = s.quality;
       if (q !== settings.quality) { board3d?.setQuality?.(settings.quality); resize(); }
     },
     resize,
-    /** Lock manual camera controls without changing saved settings or blocking automatic phase transitions. **/
-    setCameraLocked(locked) {
-      cameraLocked = !!locked;
-      if (cameraLocked && pan) endPan({ pointerId: pan.pointerId });
-    },
-    /** Restore the current scene's default view without changing control settings or the independent camera lock. **/
-    resetCamera() { return setCamera(camKind, { ...camOpts, instant: true }); },
+    setCameraLocked: mapCameraControls.setLocked,
+    resetCamera: mapCameraControls.resetCamera,
     /** Dev / settings: switch the board layer ('3d' loads three.js + the art when available; '2d' = atlas board). */
     async setBoardMode(m) {
       if (destroyed) return false;
@@ -1892,11 +1828,12 @@ export async function createFieldView(host, options = {}) {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      mapCameraControls.cancelInputs();
       try { ro?.disconnect(); } catch { /* ignore */ }
       try { offAssets?.(); } catch { /* ignore */ }
       globalThis.document?.removeEventListener?.('visibilitychange', onVisible);
       canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('wheel', webOnWheel);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerCancel);
